@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Code2, 
   AlertTriangle, 
@@ -12,7 +14,8 @@ import {
   Sparkles,
   CheckCircle2,
   XCircle,
-  Brain
+  Brain,
+  Loader2
 } from "lucide-react";
 
 interface CodeReviewDashboardProps {
@@ -22,6 +25,9 @@ interface CodeReviewDashboardProps {
 export function CodeReviewDashboard({ onAuthClick }: CodeReviewDashboardProps) {
   const [code, setCode] = useState("");
   const [activeReview, setActiveReview] = useState<string | null>(null);
+  const [reviewResults, setReviewResults] = useState<string>("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const { toast } = useToast();
 
   const reviewOptions = [
     {
@@ -58,13 +64,58 @@ export function CodeReviewDashboard({ onAuthClick }: CodeReviewDashboardProps) {
     }
   ];
 
-  const handleReviewAction = (type: string) => {
+  const handleReviewAction = async (type: string) => {
     if (!code.trim()) {
+      toast({
+        title: "No code provided",
+        description: "Please paste your code before starting analysis.",
+        variant: "destructive"
+      });
       return;
     }
+
+    setIsAnalyzing(true);
     setActiveReview(type);
-    // Here you would integrate with your AI service
-    console.log(`Starting ${type} review...`);
+    setReviewResults("");
+
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-code', {
+        body: {
+          code: code.trim(),
+          reviewType: type
+        }
+      });
+
+      if (error) {
+        console.error('Function error:', error);
+        toast({
+          title: "Analysis failed",
+          description: "Failed to analyze your code. Please try again.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (data?.analysis) {
+        setReviewResults(data.analysis);
+        toast({
+          title: "Analysis complete",
+          description: `Your code ${type} analysis is ready.`,
+        });
+      } else {
+        throw new Error('No analysis returned');
+      }
+
+    } catch (error) {
+      console.error('Error analyzing code:', error);
+      toast({
+        title: "Analysis failed",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,19 +200,30 @@ export function CodeReviewDashboard({ onAuthClick }: CodeReviewDashboardProps) {
             </Card>
 
             {/* Review Results */}
-            {activeReview && (
+            {(activeReview && (reviewResults || isAnalyzing)) && (
               <Card className="bg-gradient-card border-border shadow-card">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-success" />
-                    Review Results - {activeReview}
+                    {isAnalyzing ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-5 h-5 text-success" />
+                    )}
+                    {isAnalyzing ? `Analyzing ${activeReview}...` : `Review Results - ${activeReview}`}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="bg-code-bg border border-code-border rounded-lg p-4">
-                    <p className="text-muted-foreground">
-                      AI analysis would appear here. Connect to Supabase to enable full functionality.
-                    </p>
+                    {isAnalyzing ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <p>Analyzing your code...</p>
+                      </div>
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-sm leading-relaxed text-foreground font-mono">
+                        {reviewResults}
+                      </pre>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -189,15 +251,19 @@ export function CodeReviewDashboard({ onAuthClick }: CodeReviewDashboardProps) {
                       variant={option.variant}
                       size="lg"
                       onClick={() => handleReviewAction(option.id)}
-                      disabled={!code.trim()}
+                      disabled={!code.trim() || isAnalyzing}
                       className="w-full justify-start h-auto p-4 group"
                     >
                       <div className="flex items-start gap-3 text-left">
-                        <Icon className={`w-5 h-5 mt-0.5 ${option.color} group-hover:text-current transition-colors`} />
+                        {isAnalyzing && activeReview === option.id ? (
+                          <Loader2 className="w-5 h-5 mt-0.5 animate-spin" />
+                        ) : (
+                          <Icon className={`w-5 h-5 mt-0.5 ${option.color} group-hover:text-current transition-colors`} />
+                        )}
                         <div>
                           <div className="font-semibold">{option.title}</div>
                           <div className="text-xs opacity-90 font-normal">
-                            {option.description}
+                            {isAnalyzing && activeReview === option.id ? "Analyzing..." : option.description}
                           </div>
                         </div>
                       </div>
