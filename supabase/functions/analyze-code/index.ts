@@ -23,11 +23,11 @@ serve(async (req) => {
       );
     }
 
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) {
-      console.error('OpenAI API key not found');
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      console.error('Gemini API key not found');
       return new Response(
-        JSON.stringify({ error: 'OpenAI API key not configured' }),
+        JSON.stringify({ error: 'Gemini API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -85,36 +85,37 @@ Provide specific refactoring suggestions with examples where possible.`
 
     const systemPrompt = prompts[reviewType as keyof typeof prompts] || prompts.review;
 
-    console.log(`Analyzing code with ${reviewType} review type`);
+    console.log(`Analyzing code with ${reviewType} review type using Gemini`);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: 'You are an expert code reviewer. Provide detailed, helpful analysis.' },
-          { role: 'user', content: systemPrompt }
-        ],
-        max_tokens: 1500,
-        temperature: 0.3,
+        contents: [{
+          parts: [{
+            text: systemPrompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 1500,
+        }
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
+      console.error('Gemini API error:', errorData);
       return new Response(
-        JSON.stringify({ error: 'Failed to analyze code' }),
+        JSON.stringify({ error: 'Failed to analyze code with Gemini' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const data = await response.json();
-    const analysis = data.choices[0].message.content;
+    const analysis = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No analysis generated';
 
     console.log('Code analysis completed successfully');
 
